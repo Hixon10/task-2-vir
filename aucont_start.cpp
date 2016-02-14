@@ -72,35 +72,6 @@ void mount_cgroups();
 char *stack;
 char *stackTop;
 
-void mknod_mount() {
-    int err;
-
-    mknod("dev/null", S_IFREG | 0666, 0);
-    mknod("dev/zero", S_IFREG | 0666, 0);
-    mknod("dev/random", S_IFREG | 0666, 0);
-    mknod("dev/urandom", S_IFREG | 0666, 0);
-
-    err = mount("/dev/null", "dev/null", NULL, MS_BIND, NULL);
-    if (err < 0) {
-        errExit("mount /dev/null");
-    }
-
-    err = mount("/dev/zero", "dev/zero", NULL, MS_BIND, NULL);
-    if (err < 0) {
-        errExit("mount /dev/zero");
-    }
-
-    err = mount("/dev/random", "dev/random", NULL, MS_BIND, NULL);
-    if (err < 0) {
-        errExit("mount /dev/random");
-    }
-
-    err = mount("/dev/urandom", "dev/urandom", NULL, MS_BIND, NULL);
-    if (err < 0) {
-        errExit("mount /dev/urandom");
-    }
-}
-
 void parse_args(int argc, char *argv[]) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-d") == 0) {
@@ -178,7 +149,6 @@ void mount_cgroups() {
         } else {
             system(("sudo mkdir -p /tmp/cgroup/" + name).c_str());
             system(("sudo mount -t cgroup " + name + " -o " + name + " /tmp/cgroup/" + name).c_str());
-            system(("sudo chown 1000:1000 -R /tmp/cgroup/" + name).c_str());
         }
     }
 
@@ -199,30 +169,14 @@ int container_main(void *d) {
     close(fd[1]);
     read(fd[0], &c, 1);
 
-    err = mount("proc", (image_path + "/proc").c_str(), "proc", 0, nullptr);
-    if (err < 0) {
-        errExit("mount proc");
-    }
-
-    err = mount("none", (image_path + "/tmp").c_str(), "tmpfs", 0, nullptr);
-    if (err < 0) {
-        errExit("mount none");
+    if (mount("none", (image_path + "/proc").c_str(), "proc", MS_NOEXEC|MS_NOSUID|MS_NODEV, NULL) == -1) {
+        errExit("proc");
     }
 
     err = chdir(image_path.c_str());
     if (err < 0) {
         errExit("chdir");
     }
-
-    err = mount("sandbox-dev", "dev", "tmpfs",
-                       MS_NOSUID | MS_NODEV | MS_NOEXEC | MS_NOATIME,
-                       "size=64k,nr_inodes=16,mode=755");
-
-    if (err < 0) {
-        errExit("mount sandbox-dev");
-    }
-
-    mknod_mount();
 
     mount_file_system();
 
@@ -237,9 +191,19 @@ int container_main(void *d) {
     setgroups(0, nullptr);
     umask(0);
 
+    int sid = setsid();
+    if (sid < 0)
+    {
+        exit(EXIT_FAILURE);
+    }
+
     net_container();
 
     if (is_daemonize) {
+        if ((chdir("/")) < 0) {
+            errExit("chdir");
+        }
+
         freopen("/dev/null", "r", stdin);
         freopen("/tmp/err", "w", stdout);
         freopen("/dev/null", "w", stderr);
@@ -260,19 +224,11 @@ void mount_file_system() {
         errExit("mkdir sys");
     }
 
-    err = mount("/sys", "sys", "/sys", MS_BIND | MS_REC | MS_RDONLY, nullptr);
-    if (err < 0) {
-        errExit("mount /sys");
-    }
+    mount("sys", (image_path + "/sys").c_str(), "sysfs", 0, nullptr);
 
     err = mkdir("dev/shm", 0755);
     if (err < 0 && errno != EEXIST) {
         errExit("mkdir dev/shm");
-    }
-
-    err = mount("tmpfs", "dev/shm", "tmpfs", MS_NOSUID | MS_NODEV | MS_STRICTATIME, "mode=1777");
-    if (err < 0) {
-        errExit("mount tmpfs");
     }
 
     struct stat sb;
@@ -334,12 +290,12 @@ void set_cpu_limit() {
     }
 
     //100000 (100msec) is default
-    err = system(("echo 100000 >> " + cgroups_path + "/cpu.cfs_period_us").c_str());
+    err = system(("echo 1000000 >> " + cgroups_path + "/cpu.cfs_period_us").c_str());
     if (err < 0) {
-        errExit("echo 100000 period");
+        errExit("echo 1000000 period");
     }
 
-    int new_cpu_quota = (100000 / 100) * cpu_perc * thread::hardware_concurrency();
+    int new_cpu_quota = (1000000 / 100) * cpu_perc * thread::hardware_concurrency();
     err = system(("echo " + to_string(new_cpu_quota) + " >> " + cgroups_path + "/cpu.cfs_quota_us").c_str());
     if (err < 0) {
         errExit("set new cpu quota");
