@@ -13,7 +13,6 @@
 #include <sys/syscall.h>
 #include <thread>
 #include <string.h>
-#include <dirent.h>
 
 using namespace std;
 
@@ -151,9 +150,6 @@ void mount_cgroups() {
             system(("sudo mount -t cgroup " + name + " -o " + name + " /tmp/cgroup/" + name).c_str());
         }
     }
-
-    system(("sudo chown 1000:1000 -R " + base_path + "/cpu").c_str());
-    system(("sudo chmod 755 -R " + base_path + "/cpu").c_str());
 }
 
 void add_container_to_list() {
@@ -189,17 +185,18 @@ int container_main(void *d) {
     }
 
     setgroups(0, nullptr);
-    umask(0);
-
-    int sid = setsid();
-    if (sid < 0)
-    {
-        exit(EXIT_FAILURE);
-    }
 
     net_container();
 
     if (is_daemonize) {
+        umask(0);
+
+        int sid = setsid();
+        if (sid < 0)
+        {
+            exit(EXIT_FAILURE);
+        }
+
         if ((chdir("/")) < 0) {
             errExit("chdir");
         }
@@ -284,11 +281,6 @@ void set_cpu_limit() {
         errExit("mkdir");
     }
 
-    err = system(("chown 1000:1000 -R " + cgroups_path).c_str());
-    if (err < 0) {
-        errExit("chown");
-    }
-
     //100000 (100msec) is default
     err = system(("echo 1000000 >> " + cgroups_path + "/cpu.cfs_period_us").c_str());
     if (err < 0) {
@@ -321,6 +313,8 @@ void map_uid_and_gid(int uid, int gid) {
 
     out_uid << "0 " + to_string(uid) + " 1\n";
     out_uid.close();
+
+    system(("echo deny >> /proc/" + to_string(pid) + "/setgroups").c_str());
 
     filename = "/proc/" + to_string(pid) + "/gid_map";
     ofstream out_gid(filename);

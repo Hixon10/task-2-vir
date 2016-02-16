@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <vector>
 #include <sys/wait.h>
+#include <grp.h>
 
 #define errExit(msg)    do { perror(msg); exit(EXIT_FAILURE); \
                                } while (0)
@@ -35,6 +36,10 @@ int main(int argc, char *argv[]) {
 
     int pd = fork();
     if (pd == 0) {
+        setgroups(0, nullptr);
+        setgid(0);
+        setuid(0);
+
         err = execvp(args[0], &args[0]);
         if (err < 0) {
             errExit("execvp cmd");

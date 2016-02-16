@@ -4,11 +4,19 @@
 #include <iterator>
 #include <algorithm>
 #include <unistd.h>
+#include <linux/limits.h>
 
 #define errExit(msg)    do { perror(msg); exit(EXIT_FAILURE); \
                                } while (0)
 
 int signum = 15;
+
+std::string getexepath()
+{
+    char result[ PATH_MAX ];
+    ssize_t count = readlink( "/proc/self/exe", result, PATH_MAX );
+    return std::string( result, (count > 0) ? count : 0);
+}
 
 int main(int argc, char *argv[]) {
     if (argc > 2) {
@@ -23,6 +31,9 @@ int main(int argc, char *argv[]) {
     }
 
     sleep(1);
+
+    std::string cur_dir = getexepath();
+    chdir (cur_dir.c_str());
 
     std::ifstream is("container_list");
     std::istream_iterator<int> start(is), end;
